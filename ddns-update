@@ -8,6 +8,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import weakref
 
 DEBUG = False
 
@@ -17,7 +18,8 @@ logging.info('Started')
 
 class Record:
     """Holds and updates subdomain records on domains.google.com"""
-    def __init__(self, sub_domain, user, password):
+    def __init__(self, parent, sub_domain, user, password):
+        self.parent = weakref.ref(parent)
         self.sub_domain = sub_domain
         self.user = user
         self.password = password
@@ -88,6 +90,8 @@ class Record:
         base64_user_pass = base64.encodestring(
             ('%s:%s' % (self.user, self.password)).encode()).decode().replace('\n', '')
         req.add_header('Authorization', 'Basic %s' % base64_user_pass)
+        if self.parent.proxy:
+            req.set_proxy(self.parent.proxy[0], self.parent.proxy[1])
         response = urllib.request.urlopen(req)
         page = response.read()
         self.handle_response(page)
@@ -96,10 +100,11 @@ class Domain:
     def __init__(self):
         self.records = []
         self.tick_time = 120
+        self.proxy = None
 
     def add(self, sub_domain, user, password):
         """Append a record to self.records"""
-        self.records.append(Record(sub_domain, user, password))
+        self.records.append(Record(self, sub_domain, user, password))
 
     def show(self):
         """Print records"""
@@ -128,6 +133,13 @@ def read_conf():
                 except ValueError:
                     logging.warning(
                         'TICKTIME must be an integer ie: <TICKTIME int> in ' +
+                        '/etc/ddns-update.conf, reverting to default')
+            elif str(temp[0]) == 'PROXY':
+                try:
+                    domain.proxy = (str(temp[1]), str(temp[2]))
+                except IndexError:
+                    logging.warning(
+                        'PROXY must have two arguments ie: <PROXY 192.168.1.2:80 http> in' +
                         '/etc/ddns-update.conf, reverting to default')
             elif len(temp) == 3:
                 if DEBUG:
